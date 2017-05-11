@@ -129,4 +129,14 @@
       src=/root/{{ service }}-vhosts.tgz
       dest=/tmp/{{ ansible_nodename }}/
       flat=yes
+
+#####################################
+# Descomprimir directorio
+#####################################
+
+  - name: Uncompress directory
+    unarchive: 
+       src=/tmp/{{ ansible_nodename }}/{{ service }}-vhosts.tgz
+       dest=/tmp/{{ ansible_nodename}}/
+    delegate_to: 127.0.0.1
 ...
