@@ -1,0 +1,132 @@
+---
+- hosts: all
+  vars_prompt:
+    name: service
+    prompt: "servidor nginx o apache2"
+    default: "apache2"
+    private: no
+
+##########################################################################################
+# Comprueba mediante modulo shell y service status si el servicio existe o esta arrancado.
+# el modulo shell falla y para la ejecucion del playbook si el codigo devuelto no es 0.
+# Ya que si no existe o esta parado devuelve codigo 3, y si esta funcionando devuelve 0
+# hacer que falle si el codigo es 2.
+##########################################################################################
+
+  tasks:
+  - name: Check if service {{ service }} is running in {{ ansible_hostname }}
+    shell: service {{ service }} status
+    register: srvc
+    args:
+      warn: false
+    failed_when: srvc.rc == 2
+
+###############################################################################################
+# Esto avisa del estado del servicio, ya que la anterior tarea solo guarda el codigo de salida.
+###############################################################################################
+
+  - name: Ok · {{ service }}
+    debug:
+      msg="The service {{ service }} is started in {{ ansible_hostname }}"
+    when: srvc.rc == 0
+
+  - name: Error · {{ service }}
+    debug:
+      msg="The service {{ service }} is not running in {{ ansible_hostname }}"
+    when: srvc.rc !=0
+
+###########################################################
+# Crear directorio para guardar los ficheros con los datos.
+###########################################################
+
+  - name: Create directory for obtained data
+    file:
+       path=/root/nginx-vhosts
+       state=directory
+       owner=root
+       group=root
+    when: service == "nginx"
+
+  - name: Create directory for obtained data
+    file:
+       path=/root/apache2-vhosts
+       state=directory
+       owner=root
+       group=root
+    when: service == "apache2"
+
+#########################################################################################
+# Si el valor para var=service introducido es nginx se ejecutaran las tareas para ello
+# Si es apache2, se realiza lo correspondiente.
+# Busca en los ficheros de configuracion los server_name y el listen en el caso de nginx
+# Si es apache2, busca los ServerName, ServerAlias y VirtualHost.
+# En ambos casos guarda el resultado en un fichero para su consulta.
+#
+# Cuando grep no encuentra resultado, ansible devuelve error,
+# pero el comando se ejecuto correctamente, por lo tanto se hace que se ignoren.
+########################################################################################
+
+##################################################
+# Obtiene los valores de server_name y los guarda.
+###################################################
+
+  - name: Get {{ service }} server name
+    shell: grep -Ro 'server_name .*' /etc/{{ service }}/sites-enabled/ > /root/nginx-vhosts/nginx-servernames.txt
+    ignore_errors: True
+    when: srvc.rc == 0 and service == "nginx"
+
+##############################################
+# Obtiene los valores de listen y los guarda.
+##############################################
+
+  - name: Get {{ service }} listen address
+    shell: grep -Ro 'listen .*' /etc/{{ service }}/sites-enabled/ > /root/nginx-vhosts/nginx-listen.txt
+    ignore_errors: True
+    when: srvc.rc == 0 and service == "nginx"
+
+#################################################
+# Obtiene los valores de ServerName y los guarda.
+#################################################
+
+  - name: Get {{ service }} server name
+    shell: grep -Ro 'ServerName .*' /etc/{{ service }}/sites-enabled/ > /root/apache2-vhosts/apache-servernames.txt
+    ignore_errors: True
+    when: srvc.rc == 0 and service == "apache2"
+
+##################################################
+# Obtiene los valores de ServerAlias y los guarda.
+##################################################
+
+  - name: Get {{ service }} server alias
+    shell: grep -Ro 'ServerAlias .*' /etc/{{ service }}/sites-enabled/ > /root/apache2-vhosts/apache-serveraliases.txt
+    ignore_errors: True
+    when: srvc.rc == 0 and service == "apache2"
+
+##################################################
+# Obtiene los valores de VirtualHost y los guarda.
+##################################################
+  
+  - name: Get {{ service }} server name
+    shell: grep -Ro 'VirtualHost .*' /etc/{{ service }}/sites-enabled/ > /root/apache2-vhosts/apache-listen.txt
+    ignore_errors: True
+    when: srvc.rc == 0 and service == "apache2"
+
+#################################################
+# Comprimir directorio para su recogida.
+#################################################
+
+  - name: Compress the data directory
+    archive:
+      path=/root/{{ service }}-vhosts
+      dest=/root/{{ service }}-vhosts.tgz
+
+#####################################
+# Recoger directorio comprimido.
+#####################################
+
+  - name: Fetch compressed directory
+    fetch:
+      src=/root/{{ service }}-vhosts.tgz
+      dest=/tmp/{{ ansible_nodename }}/
+      flat=yes
+...
